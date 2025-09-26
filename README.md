@@ -1,6 +1,6 @@
 # ZyrixUI Sample Usage Guide
 
-Assume the library is loaded as `local ZyrixUI = loadstring(game:HttpGet(""))()`
+Assume the library is loaded as `local ZyrixUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Mark22028-2ndAcc/ZyrixUILibrary/refs/heads/main/ZyrixUILibraryTest.lua"))()`
 
 ## Creating a Window
 
@@ -209,4 +209,5 @@ ZyrixUI:SetTheme({
 - Locked elements show disabled visuals and trigger a notification on interaction.
 - This allows easy toggling without code changes.
 
-Upload this as `README.md` or `usage.md` on GitHub for better formatting! If you need more examples or adjustments, let me know.
+Library Source Code:
+https://raw.githubusercontent.com/Mark22028-2ndAcc/ZyrixUILibrary/refs/heads/main/ZyrixUILibraryTest.lua
