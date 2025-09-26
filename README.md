@@ -209,5 +209,10 @@ ZyrixUI:SetTheme({
 - Locked elements show disabled visuals and trigger a notification on interaction.
 - This allows easy toggling without code changes.
 
-Library Source Code:
+----------------------------------------------------------------------
+
+UI Library Source Code:
+https://github.com/Mark22028-2ndAcc/ZyrixUILibrary/blob/main/ZyrixUILibraryTest.lua
+
+UI Library Source Code Raw:
 https://raw.githubusercontent.com/Mark22028-2ndAcc/ZyrixUILibrary/refs/heads/main/ZyrixUILibraryTest.lua
