@@ -1,0 +1,1894 @@
+local ZyrixUI = {}
+
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
+local HttpService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local theme = {
+    Background = Color3.fromRGB(30, 30, 30),
+    BackgroundSecondary = Color3.fromRGB(40, 40, 40),
+    Accent = Color3.fromRGB(0, 122, 255),
+    AccentHover = Color3.fromRGB(0, 150, 255),
+    AccentPressed = Color3.fromRGB(0, 100, 200),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextSecondary = Color3.fromRGB(200, 200, 200),
+    TextDisabled = Color3.fromRGB(150, 150, 150),
+    Border = Color3.fromRGB(50, 50, 50),
+    Shadow = Color3.fromRGB(0, 0, 0),
+    Knob = Color3.fromRGB(200, 200, 200),
+    KnobActive = Color3.fromRGB(255, 255, 255),
+    CornerRadius = UDim.new(0, 6),
+    SmallCornerRadius = UDim.new(0, 4),
+    TweenInfoStandard = TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+    TweenInfoFast = TweenInfo.new(0.08, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+    TweenInfoBounce = TweenInfo.new(0.25, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out),
+    TweenInfoElastic = TweenInfo.new(0.25, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
+    TweenInfoSlow = TweenInfo.new(0.35, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut),
+    ShadowTransparency = 0.5,
+    GlowSize = 10,
+    GlowTransparency = 0.8,
+    RippleColor = Color3.fromRGB(255, 255, 255),
+    RippleTransparency = 0.5,
+    TooltipBackground = Color3.fromRGB(20, 20, 20),
+    PresetColors = {
+        Color3.fromRGB(255, 0, 0),
+        Color3.fromRGB(0, 255, 0),
+        Color3.fromRGB(0, 0, 255),
+        Color3.fromRGB(255, 255, 0),
+        Color3.fromRGB(255, 0, 255),
+        Color3.fromRGB(0, 255, 255),
+        Color3.fromRGB(255, 255, 255),
+        Color3.fromRGB(0, 0, 0),
+    },
+}
+
+local activeWindows = {}
+local activeNotifs = {}
+
+function ZyrixUI:SetTheme(newTheme)
+    for key, value in pairs(newTheme) do
+        theme[key] = value
+    end
+    for _, window in ipairs(activeWindows) do
+        window.BackgroundColor3 = theme.Background
+        for _, child in ipairs(window:GetDescendants()) do
+            if child:IsA("Frame") and child.BackgroundColor3 == theme.Background then
+                child.BackgroundColor3 = theme.Background
+            elseif child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                if child.TextColor3 == theme.Text then
+                    child.TextColor3 = theme.Text
+                end
+            end
+        end
+    end
+end
+
+function ZyrixUI:ApplyThemeToInstance(instance)
+    if instance:IsA("Frame") then
+        instance.BackgroundColor3 = theme.Background
+    elseif instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox") then
+        instance.TextColor3 = theme.Text
+    end
+end
+
+local function addCorner(instance, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = radius or theme.CornerRadius
+    corner.Parent = instance
+    return corner
+end
+
+local function addStroke(instance, color, transparency, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or theme.Border
+    stroke.Transparency = transparency or 0
+    stroke.Thickness = thickness or 1
+    stroke.Parent = instance
+    return stroke
+end
+
+local function addShadow(instance, color, transparency, thickness)
+    local shadow = Instance.new("UIStroke")
+    shadow.Color = color or theme.Shadow
+    shadow.Transparency = transparency or theme.ShadowTransparency
+    shadow.Thickness = thickness or 2
+    shadow.Parent = instance
+    return shadow
+end
+
+local function addGlow(instance, color, transparency, thickness)
+    local glow = Instance.new("UIStroke")
+    glow.Color = color or theme.Accent
+    glow.Transparency = transparency or theme.GlowTransparency
+    glow.Thickness = thickness or theme.GlowSize
+    glow.Parent = instance
+    return glow
+end
+
+local function createRipple(parent, position)
+    local ripple = Instance.new("Frame")
+    ripple.Size = UDim2.new(0, 0, 0, 0)
+    ripple.Position = position
+    ripple.BackgroundColor3 = theme.RippleColor
+    ripple.BackgroundTransparency = theme.RippleTransparency
+    ripple.ZIndex = parent.ZIndex + 1
+    addCorner(ripple, UDim.new(1, 0))
+    ripple.Parent = parent
+
+    local maxSize = math.max(parent.AbsoluteSize.X, parent.AbsoluteSize.Y) * 2
+    TweenService:Create(ripple, theme.TweenInfoStandard, {Size = UDim2.new(0, maxSize, 0, maxSize), Position = UDim2.new(0.5, -maxSize/2, 0.5, -maxSize/2), BackgroundTransparency = 1}):Play()
+    task.delay(theme.TweenInfoStandard.Time, function()
+        ripple:Destroy()
+    end)
+    return ripple
+end
+
+local function addTooltip(instance, text)
+    local tooltip = Instance.new("Frame")
+    tooltip.Size = UDim2.new(0, 0, 0, 20)
+    tooltip.BackgroundColor3 = theme.TooltipBackground
+    tooltip.Visible = false
+    addCorner(tooltip)
+    addStroke(tooltip)
+    tooltip.Parent = playerGui
+
+    local tooltipLabel = Instance.new("TextLabel")
+    tooltipLabel.Size = UDim2.new(1, 0, 1, 0)
+    tooltipLabel.BackgroundTransparency = 1
+    tooltipLabel.Text = text
+    tooltipLabel.TextColor3 = theme.Text
+    tooltipLabel.TextSize = 14
+    tooltipLabel.Font = Enum.Font.Gotham
+    tooltipLabel.Parent = tooltip
+
+    instance.MouseEnter:Connect(function()
+        tooltip.Size = UDim2.new(0, tooltipLabel.TextBounds.X + 10, 0, 20)
+        tooltip.Position = UDim2.new(0, UserInputService:GetMouseLocation().X + 10, 0, UserInputService:GetMouseLocation().Y + 10)
+        tooltip.Visible = true
+    end)
+
+    instance.MouseLeave:Connect(function()
+        tooltip.Visible = false
+    end)
+
+    RunService.RenderStepped:Connect(function()
+        if tooltip.Visible then
+            tooltip.Position = UDim2.new(0, UserInputService:GetMouseLocation().X + 10, 0, UserInputService:GetMouseLocation().Y + 10)
+        end
+    end)
+
+    return tooltip
+end
+
+function ZyrixUI:CreateLoadingScreen(titleText, subtitleText, progressCallback)
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Parent = playerGui
+    screenGui.IgnoreGuiInset = true
+
+    local loadingFrame = Instance.new("Frame")
+    loadingFrame.Size = UDim2.new(1, 0, 1, 0)
+    loadingFrame.Position = UDim2.new(0, 0, 0, 0)
+    loadingFrame.BackgroundColor3 = theme.Background
+    loadingFrame.BackgroundTransparency = 1
+    loadingFrame.Parent = screenGui
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(0.5, 0, 0.1, 0)
+    title.Position = UDim2.new(0.25, 0, 0.4, 0)
+    title.BackgroundTransparency = 1
+    title.Text = titleText or "Loading ZyrixUI"
+    title.TextColor3 = theme.Text
+    title.TextSize = 40
+    title.Font = Enum.Font.GothamBold
+    title.TextTransparency = 1
+    title.Parent = loadingFrame
+
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Size = UDim2.new(0.5, 0, 0.05, 0)
+    subtitle.Position = UDim2.new(0.25, 0, 0.5, 0)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = subtitleText or "Initializing..."
+    subtitle.TextColor3 = theme.Text
+    subtitle.TextSize = 20
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextTransparency = 1
+    subtitle.Parent = loadingFrame
+
+    local progressBar = Instance.new("Frame")
+    progressBar.Size = UDim2.new(0.5, 0, 0.02, 0)
+    progressBar.Position = UDim2.new(0.25, 0, 0.6, 0)
+    progressBar.BackgroundColor3 = theme.Border
+    addCorner(progressBar)
+    progressBar.Parent = loadingFrame
+
+    local progressFill = Instance.new("Frame")
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    progressFill.BackgroundColor3 = theme.Accent
+    addCorner(progressFill)
+    progressFill.Parent = progressBar
+
+    local spinner = Instance.new("ImageLabel")
+    spinner.Size = UDim2.new(0, 50, 0, 50)
+    spinner.Position = UDim2.new(0.475, 0, 0.55, 0)
+    spinner.BackgroundTransparency = 1
+    spinner.Image = "rbxassetid://0"
+    spinner.ImageTransparency = 1
+    spinner.Parent = loadingFrame
+
+    TweenService:Create(loadingFrame, theme.TweenInfoSlow, {BackgroundTransparency = 0.1}):Play()
+    TweenService:Create(title, theme.TweenInfoSlow, {TextTransparency = 0}):Play()
+    TweenService:Create(subtitle, theme.TweenInfoSlow, {TextTransparency = 0}):Play()
+    TweenService:Create(spinner, theme.TweenInfoSlow, {ImageTransparency = 0}):Play()
+
+    local rotationTween = TweenService:Create(spinner, TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {Rotation = 360})
+    rotationTween:Play()
+
+    local pulseTween = TweenService:Create(spinner, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, -1, true), {Size = UDim2.new(0, 60, 0, 60)})
+    pulseTween:Play()
+
+    if progressCallback then
+        coroutine.wrap(function()
+            while loadingFrame.Parent do
+                local progress = progressCallback()
+                TweenService:Create(progressFill, theme.TweenInfoFast, {Size = UDim2.new(progress, 0, 1, 0)}):Play()
+                task.wait(0.1)
+            end
+        end)()
+    end
+
+    function screenGui:DestroyWithFade()
+        TweenService:Create(loadingFrame, theme.TweenInfoSlow, {BackgroundTransparency = 1}):Play()
+        TweenService:Create(title, theme.TweenInfoSlow, {TextTransparency = 1}):Play()
+        TweenService:Create(subtitle, theme.TweenInfoSlow, {TextTransparency = 1}):Play()
+        TweenService:Create(spinner, theme.TweenInfoSlow, {ImageTransparency = 1}):Play()
+        TweenService:Create(progressBar, theme.TweenInfoSlow, {BackgroundTransparency = 1}):Play()
+        wait(theme.TweenInfoSlow.Time)
+        screenGui:Destroy()
+    end
+
+    return screenGui
+end
+
+function ZyrixUI:CreateWindow(options)
+    options = options or {}
+    local title = options.Title or "ZyrixUI Window"
+    local size = options.Size or UDim2.new(0, 500, 0, 300)
+    local position = options.Position or UDim2.new(0.5, -250, 0.5, -150)
+    local minSize = options.MinSize or Vector2.new(300, 200)
+    local maxSize = options.MaxSize or Vector2.new(800, 600)
+    local resizable = options.Resizable or false
+    local minimizable = options.Minimizable or true
+    local closable = options.Closable or true
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Parent = playerGui
+    screenGui.IgnoreGuiInset = true
+
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = size
+    mainFrame.Position = position
+    mainFrame.BackgroundColor3 = theme.Background
+    mainFrame.BackgroundTransparency = 1
+    mainFrame.BorderSizePixel = 0
+    mainFrame.ClipsDescendants = true
+    addCorner(mainFrame)
+    addStroke(mainFrame, theme.Shadow, theme.ShadowTransparency, 2)
+    addGlow(mainFrame, theme.Accent, 1, 5)
+    mainFrame.Parent = screenGui
+
+    table.insert(activeWindows, mainFrame)
+
+    TweenService:Create(mainFrame, theme.TweenInfoBounce, {BackgroundTransparency = 0}):Play()
+    TweenService:Create(mainFrame, theme.TweenInfoElastic, {Size = size + UDim2.new(0, 10, 0, 10)}):Play()
+    task.delay(theme.TweenInfoElastic.Time / 2, function()
+        TweenService:Create(mainFrame, theme.TweenInfoElastic, {Size = size}):Play()
+    end)
+
+    local titleBar = Instance.new("Frame")
+    titleBar.Size = UDim2.new(1, 0, 0, 30)
+    titleBar.BackgroundColor3 = theme.Accent
+    titleBar.BorderSizePixel = 0
+    addCorner(titleBar, UDim.new(0, 6))
+    titleBar.Parent = mainFrame
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -90, 1, 0)
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = title
+    titleLabel.TextColor3 = theme.Text
+    titleLabel.TextSize = 18
+    titleLabel.Font = Enum.Font.GothamSemibold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.TextTruncate = Enum.TextTruncate.SplitWord
+    titleLabel.Parent = titleBar
+
+    local buttonContainer = Instance.new("Frame")
+    buttonContainer.Size = UDim2.new(0, 90, 1, 0)
+    buttonContainer.Position = UDim2.new(1, -90, 0, 0)
+    buttonContainer.BackgroundTransparency = 1
+    buttonContainer.Parent = titleBar
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 5)
+    layout.Parent = buttonContainer
+
+    local minimizeButton
+    if minimizable then
+        minimizeButton = Instance.new("TextButton")
+        minimizeButton.Size = UDim2.new(0, 30, 0, 30)
+        minimizeButton.BackgroundTransparency = 1
+        minimizeButton.Text = "-"
+        minimizeButton.TextColor3 = theme.Text
+        minimizeButton.TextSize = 20
+        minimizeButton.Parent = buttonContainer
+
+        minimizeButton.MouseEnter:Connect(function()
+            TweenService:Create(minimizeButton, theme.TweenInfoFast, {TextColor3 = theme.AccentHover}):Play()
+        end)
+        minimizeButton.MouseLeave:Connect(function()
+            TweenService:Create(minimizeButton, theme.TweenInfoFast, {TextColor3 = theme.Text}):Play()
+        end)
+    end
+
+    if closable then
+        local closeButton = Instance.new("TextButton")
+        closeButton.Size = UDim2.new(0, 30, 0, 30)
+        closeButton.BackgroundTransparency = 1
+        closeButton.Text = "X"
+        closeButton.TextColor3 = theme.Text
+        closeButton.TextSize = 20
+        closeButton.Parent = buttonContainer
+
+        closeButton.MouseEnter:Connect(function()
+            TweenService:Create(closeButton, theme.TweenInfoFast, {TextColor3 = theme.AccentHover}):Play()
+        end)
+        closeButton.MouseLeave:Connect(function()
+            TweenService:Create(closeButton, theme.TweenInfoFast, {TextColor3 = theme.Text}):Play()
+        end)
+
+        closeButton.MouseButton1Click:Connect(function()
+            TweenService:Create(mainFrame, theme.TweenInfoBounce, {Size = UDim2.new(0, 0, 0, 0)}):Play()
+            task.delay(theme.TweenInfoBounce.Time, function()
+                screenGui:Destroy()
+            end)
+        end)
+    end
+
+    local minimized = false
+    local originalSize = mainFrame.Size
+    local originalPosition = mainFrame.Position
+    local originalRotation = mainFrame.Rotation
+
+    if minimizable then
+        minimizeButton.MouseButton1Click:Connect(function()
+            if minimized then
+                TweenService:Create(mainFrame, theme.TweenInfoSlow, {Size = originalSize, Position = originalPosition, Rotation = originalRotation}):Play()
+                TweenService:Create(mainFrame, theme.TweenInfoElastic, {BackgroundColor3 = theme.Background}):Play()
+                minimized = false
+            else
+                originalSize = mainFrame.Size
+                originalPosition = mainFrame.Position
+                originalRotation = mainFrame.Rotation
+                local minSize = UDim2.new(0, 200, 0, 30)
+                local minPos = UDim2.new(1, -210, 1, -40)
+                TweenService:Create(mainFrame, theme.TweenInfoSlow, {Size = minSize, Position = minPos, Rotation = 0}):Play()
+                TweenService:Create(mainFrame, theme.TweenInfoBounce, {BackgroundColor3 = theme.BackgroundSecondary}):Play()
+                minimized = true
+            end
+        end)
+    end
+
+    local dragging = false
+    local resizeDragging = false
+    local dragInput
+    local dragStart
+    local startPos
+    local velocity = Vector2.new(0, 0)
+    local lastMousePos = Vector2.new(0, 0)
+
+    local function updateDrag(input)
+        local delta = input.Position - dragStart
+        local newPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        TweenService:Create(mainFrame, theme.TweenInfoFast, {Position = newPos}):Play()
+        velocity = (input.Position - lastMousePos) / RunService.RenderStepped:Wait()
+        lastMousePos = input.Position
+    end
+
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = mainFrame.Position
+            velocity = Vector2.new(0, 0)
+            lastMousePos = input.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    local momentumDistance = velocity * 0.2
+                    local newPos = mainFrame.Position + UDim2.new(0, momentumDistance.X, 0, momentumDistance.Y)
+                    TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = newPos}):Play()
+                end
+            end)
+        end
+    end)
+
+    titleBar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            updateDrag(input)
+        end
+    end)
+
+    if resizable then
+        local resizeHandle = Instance.new("Frame")
+        resizeHandle.Size = UDim2.new(0, 10, 0, 10)
+        resizeHandle.Position = UDim2.new(1, -10, 1, -10)
+        resizeHandle.BackgroundTransparency = 1
+        resizeHandle.Parent = mainFrame
+
+        resizeHandle.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                resizeDragging = true
+                dragStart = input.Position
+                startPos = mainFrame.Position
+                originalSize = mainFrame.Size
+            end
+        end)
+
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                resizeDragging = false
+            end
+        end)
+
+        RunService.RenderStepped:Connect(function()
+            if resizeDragging then
+                local delta = UserInputService:GetMouseLocation() - dragStart
+                local newSizeX = math.clamp(originalSize.X.Offset + delta.X, minSize.X, maxSize.X)
+                local newSizeY = math.clamp(originalSize.Y.Offset + delta.Y, minSize.Y, maxSize.Y)
+                TweenService:Create(mainFrame, theme.TweenInfoFast, {Size = UDim2.new(0, newSizeX, 0, newSizeY)}):Play()
+            end
+        end)
+    end
+
+    local tabContainer = Instance.new("ScrollingFrame")
+    tabContainer.Size = UDim2.new(0.2, 0, 1, -30)
+    tabContainer.Position = UDim2.new(0, 0, 0, 30)
+    tabContainer.BackgroundTransparency = 1
+    tabContainer.ScrollBarThickness = 4
+    tabContainer.ScrollBarImageColor3 = theme.Accent
+    tabContainer.Parent = mainFrame
+
+    local tabLayout = Instance.new("UIListLayout")
+    tabLayout.FillDirection = Enum.FillDirection.Vertical
+    tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabLayout.Padding = UDim.new(0, 5)
+    tabLayout.Parent = tabContainer
+
+    local contentArea = Instance.new("Frame")
+    contentArea.Size = UDim2.new(0.8, 0, 1, -30)
+    contentArea.Position = UDim2.new(0.2, 0, 0, 30)
+    contentArea.BackgroundTransparency = 1
+    contentArea.ClipsDescendants = true
+    contentArea.Parent = mainFrame
+
+    local tabs = {}
+    local currentTabIndex = 1
+
+    function mainFrame:CreateTab(tabOptions)
+        tabOptions = tabOptions or {}
+        local tabName = tabOptions.Name or "Tab"
+        local imageId = tabOptions.ImageId
+        local tooltipText = tabOptions.Tooltip
+        local premiumOnly = tabOptions.premiumOnly or false
+
+        local tabButton = Instance.new("TextButton")
+        tabButton.Size = UDim2.new(1, 0, 0, 40)
+        tabButton.BackgroundColor3 = theme.Border
+        tabButton.Text = ""
+        addCorner(tabButton)
+        tabButton.Parent = tabContainer
+
+        local tabImage = Instance.new("ImageLabel")
+        tabImage.Size = UDim2.new(0, 30, 0, 30)
+        tabImage.Position = UDim2.new(0, 5, 0.5, -15)
+        tabImage.BackgroundTransparency = 1
+        if imageId then
+            tabImage.Image = "rbxassetid://" .. imageId
+        end
+        if premiumOnly then
+            tabImage.ImageColor3 = theme.TextDisabled
+        end
+        tabImage.Parent = tabButton
+
+        local tabLabel = Instance.new("TextLabel")
+        tabLabel.Size = UDim2.new(1, -40, 1, 0)
+        tabLabel.Position = UDim2.new(0, 40, 0, 0)
+        tabLabel.BackgroundTransparency = 1
+        tabLabel.Text = tabName
+        tabLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+        tabLabel.TextSize = 16
+        tabLabel.Font = Enum.Font.Gotham
+        tabLabel.TextXAlignment = Enum.TextXAlignment.Left
+        tabLabel.Parent = tabButton
+
+        if tooltipText then
+            addTooltip(tabButton, tooltipText)
+        end
+
+        local tabContent = Instance.new("ScrollingFrame")
+        tabContent.Size = UDim2.new(1, 0, 1, 0)
+        tabContent.Position = UDim2.new(1, 0, 0, 0)
+        tabContent.BackgroundTransparency = 1
+        tabContent.ScrollBarThickness = 4
+        tabContent.ScrollBarImageColor3 = theme.Accent
+        tabContent.Visible = true
+        tabContent.Parent = contentArea
+
+        local contentLayout = Instance.new("UIListLayout")
+        contentLayout.FillDirection = Enum.FillDirection.Vertical
+        contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        contentLayout.Padding = UDim.new(0, 10)
+        contentLayout.Parent = tabContent
+
+        contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            tabContent.CanvasSize = UDim2.new(0, 0, 0, contentLayout.AbsoluteContentSize.Y)
+        end)
+
+        tabButton.MouseButton1Click:Connect(function()
+            if premiumOnly then
+                mainFrame:CreateNotification({
+                    Title = "Premium Feature",
+                    Description = "This tab is available only for premium users."
+                })
+                return
+            end
+            local index = table.find(tabs, {Button = tabButton, Content = tabContent})
+            if index then
+                for i, t in ipairs(tabs) do
+                    if i ~= index then
+                        TweenService:Create(t.Content, theme.TweenInfoStandard, {Position = UDim2.new(-1 * (i - index), 0, 0, 0)}):Play()
+                        TweenService:Create(t.Button, theme.TweenInfoStandard, {BackgroundColor3 = theme.Border}):Play()
+                    end
+                end
+                TweenService:Create(tabContent, theme.TweenInfoStandard, {Position = UDim2.new(0, 0, 0, 0)}):Play()
+                TweenService:Create(tabButton, theme.TweenInfoStandard, {BackgroundColor3 = theme.Accent}):Play()
+                currentTabIndex = index
+            end
+        end)
+
+        tabButton.MouseEnter:Connect(function()
+            local index = table.find(tabs, {Button = tabButton, Content = tabContent})
+            if currentTabIndex ~= index and not premiumOnly then
+                TweenService:Create(tabButton, theme.TweenInfoFast, {BackgroundColor3 = theme.AccentHover}):Play()
+            end
+        end)
+
+        tabButton.MouseLeave:Connect(function()
+            local index = table.find(tabs, {Button = tabButton, Content = tabContent})
+            if currentTabIndex ~= index and not premiumOnly then
+                TweenService:Create(tabButton, theme.TweenInfoFast, {BackgroundColor3 = theme.Border}):Play()
+            end
+        end)
+
+        tabs[#tabs + 1] = {Button = tabButton, Content = tabContent}
+
+        if #tabs == 1 and not premiumOnly then
+            TweenService:Create(tabContent, theme.TweenInfoStandard, {Position = UDim2.new(0, 0, 0, 0)}):Play()
+            TweenService:Create(tabButton, theme.TweenInfoStandard, {BackgroundColor3 = theme.Accent}):Play()
+            currentTabIndex = 1
+        end
+
+        local tabAPI = {}
+
+        function tabAPI:CreateSection(sectionOptions)
+            sectionOptions = sectionOptions or {}
+            local sectionName = sectionOptions.Name or "Section"
+            local collapsible = sectionOptions.Collapsible or true
+            local defaultCollapsed = sectionOptions.DefaultCollapsed or false
+            local premiumOnly = sectionOptions.premiumOnly or false
+
+            local sectionFrame = Instance.new("Frame")
+            sectionFrame.Size = UDim2.new(1, 0, 0, 30)
+            sectionFrame.BackgroundColor3 = premiumOnly and theme.BackgroundSecondary or theme.Border
+            addCorner(sectionFrame)
+            sectionFrame.Parent = tabContent
+
+            local sectionHeader = Instance.new("Frame")
+            sectionHeader.Size = UDim2.new(1, 0, 0, 30)
+            sectionHeader.BackgroundTransparency = 1
+            sectionHeader.Parent = sectionFrame
+
+            local sectionTitle = Instance.new("TextLabel")
+            sectionTitle.Size = UDim2.new(1, -30, 1, 0)
+            sectionTitle.BackgroundTransparency = 1
+            sectionTitle.Text = sectionName
+            sectionTitle.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+            sectionTitle.TextSize = 18
+            sectionTitle.Font = Enum.Font.GothamSemibold
+            sectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+            sectionTitle.Parent = sectionHeader
+
+            local collapseButton
+            if collapsible then
+                collapseButton = Instance.new("TextButton")
+                collapseButton.Size = UDim2.new(0, 30, 0, 30)
+                collapseButton.Position = UDim2.new(1, -30, 0, 0)
+                collapseButton.BackgroundTransparency = 1
+                collapseButton.Text = defaultCollapsed and "+" or "-"
+                collapseButton.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                collapseButton.TextSize = 20
+                collapseButton.Parent = sectionHeader
+            end
+
+            local sectionContent = Instance.new("Frame")
+            sectionContent.Size = UDim2.new(1, 0, 0, 0)
+            sectionContent.Position = UDim2.new(0, 0, 0, 30)
+            sectionContent.BackgroundTransparency = 1
+            sectionContent.ClipsDescendants = true
+            sectionContent.Parent = sectionFrame
+
+            local sectionLayout = Instance.new("UIListLayout")
+            sectionLayout.FillDirection = Enum.FillDirection.Vertical
+            sectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            sectionLayout.Padding = UDim.new(0, 5)
+            sectionLayout.Parent = sectionContent
+
+            local collapsed = defaultCollapsed
+
+            local function updateSectionSize()
+                local contentSize = sectionLayout.AbsoluteContentSize.Y
+                local newHeight = collapsed and 0 or contentSize
+                TweenService:Create(sectionContent, theme.TweenInfoElastic, {Size = UDim2.new(1, 0, 0, newHeight)}):Play()
+                TweenService:Create(sectionFrame, theme.TweenInfoElastic, {Size = UDim2.new(1, 0, 0, newHeight + 30)}):Play()
+            end
+
+            sectionLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateSectionSize)
+
+            if collapsible then
+                collapseButton.MouseButton1Click:Connect(function()
+                    if premiumOnly then
+                        mainFrame:CreateNotification({
+                            Title = "Premium Feature",
+                            Description = "This section is available only for premium users."
+                        })
+                        return
+                    end
+                    collapsed = not collapsed
+                    collapseButton.Text = collapsed and "+" or "-"
+                    updateSectionSize()
+                end)
+            end
+
+            if defaultCollapsed then
+                updateSectionSize()
+            end
+
+            local sectionAPI = {}
+
+            function sectionAPI:CreateButton(buttonOptions)
+                buttonOptions = buttonOptions or {}
+                local btnName = buttonOptions.Name or "Button"
+                local callback = buttonOptions.Callback or function() end
+                local icon = buttonOptions.Icon
+                local tooltip = buttonOptions.Tooltip
+                local premiumOnly = buttonOptions.premiumOnly or false
+
+                local buttonFrame = Instance.new("TextButton")
+                buttonFrame.Size = UDim2.new(1, 0, 0, 30)
+                buttonFrame.BackgroundColor3 = theme.Accent
+                buttonFrame.Text = btnName
+                buttonFrame.TextColor3 = theme.Text
+                buttonFrame.TextSize = 16
+                buttonFrame.Font = Enum.Font.Gotham
+                addCorner(buttonFrame)
+                buttonFrame.Parent = sectionContent
+
+                if premiumOnly then
+                    buttonFrame.BackgroundColor3 = theme.BackgroundSecondary
+                    buttonFrame.TextColor3 = theme.TextDisabled
+                end
+
+                if icon then
+                    local btnIcon = Instance.new("ImageLabel")
+                    btnIcon.Size = UDim2.new(0, 20, 0, 20)
+                    btnIcon.Position = UDim2.new(0, 5, 0.5, -10)
+                    btnIcon.BackgroundTransparency = 1
+                    btnIcon.Image = icon
+                    if premiumOnly then
+                        btnIcon.ImageColor3 = theme.TextDisabled
+                    end
+                    btnIcon.Parent = buttonFrame
+
+                    buttonFrame.TextXAlignment = Enum.TextXAlignment.Right
+                    buttonFrame.TextSize = 14
+                end
+
+                if tooltip then
+                    addTooltip(buttonFrame, tooltip)
+                end
+
+                local originalPos = buttonFrame.Position
+                local originalSize = buttonFrame.Size
+
+                buttonFrame.MouseButton1Down:Connect(function()
+                    createRipple(buttonFrame, UDim2.new(0.5, 0, 0.5, 0))
+                    TweenService:Create(buttonFrame, theme.TweenInfoFast, {Position = originalPos + UDim2.new(0, 2, 0, 2), Size = originalSize - UDim2.new(0, 4, 0, 4), BackgroundColor3 = theme.AccentPressed}):Play()
+                end)
+
+                buttonFrame.MouseButton1Up:Connect(function()
+                    TweenService:Create(buttonFrame, theme.TweenInfoBounce, {Position = originalPos, Size = originalSize, BackgroundColor3 = premiumOnly and theme.BackgroundSecondary or theme.Accent}):Play()
+                    if not premiumOnly then
+                        callback()
+                    else
+                        mainFrame:CreateNotification({
+                            Title = "Premium Feature",
+                            Description = "This button is available only for premium users."
+                        })
+                    end
+                end)
+
+                buttonFrame.MouseEnter:Connect(function()
+                    if not premiumOnly then
+                        TweenService:Create(buttonFrame, theme.TweenInfoStandard, {BackgroundColor3 = theme.AccentHover, Size = originalSize + UDim2.new(0, 2, 0, 2)}):Play()
+                    end
+                end)
+
+                buttonFrame.MouseLeave:Connect(function()
+                    if not premiumOnly then
+                        TweenService:Create(buttonFrame, theme.TweenInfoStandard, {BackgroundColor3 = theme.Accent, Size = originalSize}):Play()
+                    end
+                end)
+            end
+
+            function sectionAPI:CreateToggle(toggleOptions)
+                toggleOptions = toggleOptions or {}
+                local togName = toggleOptions.Name or "Toggle"
+                local default = toggleOptions.Default or false
+                local callback = toggleOptions.Callback or function(state) end
+                local tooltip = toggleOptions.Tooltip
+                local premiumOnly = toggleOptions.premiumOnly or false
+
+                local toggleFrame = Instance.new("Frame")
+                toggleFrame.Size = UDim2.new(1, 0, 0, 30)
+                toggleFrame.BackgroundTransparency = 1
+                toggleFrame.Parent = sectionContent
+
+                local toggleLabel = Instance.new("TextLabel")
+                toggleLabel.Size = UDim2.new(1, -50, 1, 0)
+                toggleLabel.BackgroundTransparency = 1
+                toggleLabel.Text = togName
+                toggleLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                toggleLabel.TextSize = 16
+                toggleLabel.Font = Enum.Font.Gotham
+                toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+                toggleLabel.Parent = toggleFrame
+
+                if tooltip then
+                    addTooltip(toggleFrame, tooltip)
+                end
+
+                local toggleButton = Instance.new("Frame")
+                toggleButton.Size = UDim2.new(0, 40, 0, 20)
+                toggleButton.Position = UDim2.new(1, -40, 0.5, -10)
+                toggleButton.BackgroundColor3 = premiumOnly and theme.BackgroundSecondary or theme.Border
+                addCorner(toggleButton, theme.SmallCornerRadius)
+                toggleButton.Parent = toggleFrame
+
+                local toggleKnob = Instance.new("Frame")
+                toggleKnob.Size = UDim2.new(0.5, 0, 1, 0)
+                toggleKnob.BackgroundColor3 = premiumOnly and theme.TextDisabled or (default and theme.Accent or theme.Knob)
+                addCorner(toggleKnob, theme.SmallCornerRadius)
+                toggleKnob.Parent = toggleButton
+
+                local checkIcon = Instance.new("ImageLabel")
+                checkIcon.Size = UDim2.new(0, 0, 0, 0)
+                checkIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
+                checkIcon.BackgroundTransparency = 1
+                checkIcon.Image = "rbxassetid://3926305904"
+                checkIcon.ImageRectOffset = Vector2.new(312, 4)
+                checkIcon.ImageRectSize = Vector2.new(24, 24)
+                checkIcon.Parent = toggleKnob
+
+                local toggled = default
+                if toggled then
+                    toggleKnob.Position = UDim2.new(0.5, 0, 0, 0)
+                    TweenService:Create(checkIcon, theme.TweenInfoBounce, {Size = UDim2.new(1, 0, 1, 0)}):Play()
+                else
+                    toggleKnob.Position = UDim2.new(0, 0, 0, 0)
+                end
+
+                toggleButton.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if premiumOnly then
+                            mainFrame:CreateNotification({
+                                Title = "Premium Feature",
+                                Description = "This toggle is available only for premium users."
+                            })
+                            return
+                        end
+                        toggled = not toggled
+                        local newPos = toggled and UDim2.new(0.5, 0, 0, 0) or UDim2.new(0, 0, 0, 0)
+                        local newColor = toggled and theme.Accent or theme.Knob
+                        TweenService:Create(toggleKnob, theme.TweenInfoElastic, {Position = newPos, BackgroundColor3 = newColor}):Play()
+                        if toggled then
+                            TweenService:Create(checkIcon, theme.TweenInfoBounce, {Size = UDim2.new(1, 0, 1, 0)}):Play()
+                        else
+                            TweenService:Create(checkIcon, theme.TweenInfoBounce, {Size = UDim2.new(0, 0, 0, 0)}):Play()
+                        end
+                        callback(toggled)
+                    end
+                end)
+            end
+
+            function sectionAPI:CreateTextbox(textboxOptions)
+                textboxOptions = textboxOptions or {}
+                local tbName = textboxOptions.Name or "Textbox"
+                local placeholder = textboxOptions.Placeholder or "Input..."
+                local callback = textboxOptions.Callback or function(text) end
+                local clearable = textboxOptions.Clearable or true
+                local tooltip = textboxOptions.Tooltip
+                local premiumOnly = textboxOptions.premiumOnly or false
+
+                local textboxFrame = Instance.new("Frame")
+                textboxFrame.Size = UDim2.new(1, 0, 0, 30)
+                textboxFrame.BackgroundTransparency = 1
+                textboxFrame.Parent = sectionContent
+
+                local textboxLabel = Instance.new("TextLabel")
+                textboxLabel.Size = UDim2.new(1, -150, 1, 0)
+                textboxLabel.BackgroundTransparency = 1
+                textboxLabel.Text = tbName
+                textboxLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                textboxLabel.TextSize = 16
+                textboxLabel.Font = Enum.Font.Gotham
+                textboxLabel.TextXAlignment = Enum.TextXAlignment.Left
+                textboxLabel.Parent = textboxFrame
+
+                local textboxContainer = Instance.new("Frame")
+                textboxContainer.Size = UDim2.new(0, 140, 1, 0)
+                textboxContainer.Position = UDim2.new(1, -140, 0, 0)
+                textboxContainer.BackgroundColor3 = premiumOnly and theme.BackgroundSecondary or theme.Border
+                addCorner(textboxContainer)
+                textboxContainer.Parent = textboxFrame
+
+                local textbox = Instance.new("TextBox")
+                textbox.Size = UDim2.new(1, clearable and -20 or 0, 1, 0)
+                textbox.BackgroundTransparency = 1
+                textbox.Text = ""
+                textbox.PlaceholderText = placeholder
+                textbox.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                textbox.PlaceholderColor3 = premiumOnly and theme.TextDisabled or theme.TextSecondary
+                textbox.TextSize = 16
+                textbox.Font = Enum.Font.Gotham
+                textbox.TextXAlignment = Enum.TextXAlignment.Left
+                textbox.TextEditable = not premiumOnly
+                textbox.Parent = textboxContainer
+
+                local stroke = addStroke(textboxContainer, theme.Border)
+                local glow = addGlow(textboxContainer, theme.Accent, 1)
+
+                if tooltip then
+                    addTooltip(textboxFrame, tooltip)
+                end
+
+                if clearable then
+                    local clearButton = Instance.new("TextButton")
+                    clearButton.Size = UDim2.new(0, 20, 1, 0)
+                    clearButton.Position = UDim2.new(1, -20, 0, 0)
+                    clearButton.BackgroundTransparency = 1
+                    clearButton.Text = "X"
+                    clearButton.TextColor3 = theme.TextSecondary
+                    clearButton.TextSize = 14
+                    clearButton.Parent = textboxContainer
+
+                    clearButton.MouseButton1Click:Connect(function()
+                        if premiumOnly then
+                            mainFrame:CreateNotification({
+                                Title = "Premium Feature",
+                                Description = "This textbox is available only for premium users."
+                            })
+                            return
+                        end
+                        textbox.Text = ""
+                        callback("")
+                    end)
+
+                    textbox:GetPropertyChangedSignal("Text"):Connect(function()
+                        clearButton.Visible = textbox.Text ~= "" and not premiumOnly
+                    end)
+                    clearButton.Visible = false
+                end
+
+                textbox.Focused:Connect(function()
+                    if premiumOnly then return end
+                    TweenService:Create(stroke, theme.TweenInfoStandard, {Color = theme.Accent}):Play()
+                    TweenService:Create(glow, theme.TweenInfoStandard, {Transparency = theme.GlowTransparency}):Play()
+                end)
+
+                textbox.FocusLost:Connect(function(enter)
+                    if premiumOnly then return end
+                    TweenService:Create(stroke, theme.TweenInfoStandard, {Color = theme.Border}):Play()
+                    TweenService:Create(glow, theme.TweenInfoStandard, {Transparency = 1}):Play()
+                    if enter then
+                        callback(textbox.Text)
+                    end
+                end)
+            end
+
+            function sectionAPI:CreateSlider(sliderOptions)
+                sliderOptions = sliderOptions or {}
+                local slName = sliderOptions.Name or "Slider"
+                local min = sliderOptions.Min or 0
+                local max = sliderOptions.Max or 100
+                local default = sliderOptions.Default or min
+                local step = sliderOptions.Step or 1
+                local callback = sliderOptions.Callback or function(value) end
+                local tooltip = sliderOptions.Tooltip
+                local premiumOnly = sliderOptions.premiumOnly or false
+
+                local sliderFrame = Instance.new("Frame")
+                sliderFrame.Size = UDim2.new(1, 0, 0, 50)
+                sliderFrame.BackgroundTransparency = 1
+                sliderFrame.Parent = sectionContent
+
+                local sliderLabel = Instance.new("TextLabel")
+                sliderLabel.Size = UDim2.new(1, 0, 0, 20)
+                sliderLabel.BackgroundTransparency = 1
+                sliderLabel.Text = slName
+                sliderLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                sliderLabel.TextSize = 16
+                sliderLabel.Font = Enum.Font.Gotham
+                sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+                sliderLabel.Parent = sliderFrame
+
+                if tooltip then
+                    addTooltip(sliderLabel, tooltip)
+                end
+
+                local valueLabel = Instance.new("TextLabel")
+                valueLabel.Size = UDim2.new(0, 50, 0, 20)
+                valueLabel.Position = UDim2.new(1, -50, 0, 0)
+                valueLabel.BackgroundTransparency = 1
+                valueLabel.Text = tostring(default)
+                valueLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                valueLabel.TextSize = 16
+                valueLabel.Font = Enum.Font.Gotham
+                valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+                valueLabel.Parent = sliderFrame
+
+                local sliderBar = Instance.new("Frame")
+                sliderBar.Size = UDim2.new(1, 0, 0, 4)
+                sliderBar.Position = UDim2.new(0, 0, 1, -15)
+                sliderBar.BackgroundColor3 = premiumOnly and theme.BackgroundSecondary or theme.Border
+                addCorner(sliderBar, theme.SmallCornerRadius)
+                sliderBar.Parent = sliderFrame
+
+                local sliderFill = Instance.new("Frame")
+                sliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+                sliderFill.BackgroundColor3 = premiumOnly and theme.TextDisabled or theme.Accent
+                addCorner(sliderFill, theme.SmallCornerRadius)
+                sliderFill.Parent = sliderBar
+
+                local sliderKnob = Instance.new("Frame")
+                sliderKnob.Size = UDim2.new(0, 12, 0, 12)
+                sliderKnob.Position = UDim2.new(sliderFill.Size.X.Scale, -6, 0.5, -6)
+                sliderKnob.BackgroundColor3 = premiumOnly and theme.TextDisabled or theme.KnobActive
+                addCorner(sliderKnob)
+                addStroke(sliderKnob, theme.Accent)
+                sliderKnob.Parent = sliderBar
+
+                local bubble = Instance.new("Frame")
+                bubble.Size = UDim2.new(0, 40, 0, 20)
+                bubble.Position = UDim2.new(0.5, -20, -1, -5)
+                bubble.BackgroundColor3 = theme.TooltipBackground
+                bubble.Visible = false
+                addCorner(bubble)
+                addStroke(bubble)
+                bubble.Parent = sliderKnob
+
+                local bubbleLabel = Instance.new("TextLabel")
+                bubbleLabel.Size = UDim2.new(1, 0, 1, 0)
+                bubbleLabel.BackgroundTransparency = 1
+                bubbleLabel.TextColor3 = theme.Text
+                bubbleLabel.TextSize = 14
+                bubbleLabel.Parent = bubble
+
+                local draggingSlider = false
+                local originalKnobSize = sliderKnob.Size
+
+                sliderBar.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if premiumOnly then
+                            mainFrame:CreateNotification({
+                                Title = "Premium Feature",
+                                Description = "This slider is available only for premium users."
+                            })
+                            return
+                        end
+                        draggingSlider = true
+                        TweenService:Create(sliderKnob, theme.TweenInfoStandard, {Size = originalKnobSize + UDim2.new(0, 4, 0, 4)}):Play()
+                        bubble.Visible = true
+                    end
+                end)
+
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        draggingSlider = false
+                        TweenService:Create(sliderKnob, theme.TweenInfoStandard, {Size = originalKnobSize}):Play()
+                        bubble.Visible = false
+                    end
+                end)
+
+                RunService.RenderStepped:Connect(function()
+                    if draggingSlider then
+                        local mousePos = UserInputService:GetMouseLocation()
+                        local relPos = mousePos - sliderBar.AbsolutePosition
+                        local fraction = math.clamp(relPos.X / sliderBar.AbsoluteSize.X, 0, 1)
+                        local value = min + fraction * (max - min)
+                        value = math.round(value / step) * step
+                        fraction = (value - min) / (max - min)
+                        TweenService:Create(sliderFill, theme.TweenInfoFast, {Size = UDim2.new(fraction, 0, 1, 0)}):Play()
+                        TweenService:Create(sliderKnob, theme.TweenInfoFast, {Position = UDim2.new(fraction, -6, 0.5, -6)}):Play()
+                        valueLabel.Text = tostring(value)
+                        bubbleLabel.Text = tostring(value)
+                        callback(value)
+                    end
+                end)
+            end
+
+            function sectionAPI:CreateAdaptiveInput(inputOptions)
+                inputOptions = inputOptions or {}
+                local inpName = inputOptions.Name or "Adaptive Input"
+                local placeholder = inputOptions.Placeholder or "Type here..."
+                local callback = inputOptions.Callback or function(text) end
+                local multiLine = inputOptions.MultiLine or true
+                local lineNumbers = inputOptions.LineNumbers or false
+                local premiumOnly = inputOptions.premiumOnly or false
+
+                local inputFrame = Instance.new("Frame")
+                inputFrame.Size = UDim2.new(1, 0, 0, 30)
+                inputFrame.BackgroundTransparency = 1
+                inputFrame.Parent = sectionContent
+
+                local inputLabel = Instance.new("TextLabel")
+                inputLabel.Size = UDim2.new(0, 100, 1, 0)
+                inputLabel.BackgroundTransparency = 1
+                inputLabel.Text = inpName
+                inputLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                inputLabel.TextSize = 16
+                inputLabel.Font = Enum.Font.Gotham
+                inputLabel.TextXAlignment = Enum.TextXAlignment.Left
+                inputLabel.Parent = inputFrame
+
+                local inputContainer = Instance.new("Frame")
+                inputContainer.Size = UDim2.new(1, -110, 0, 30)
+                inputContainer.Position = UDim2.new(0, 110, 0, 0)
+                inputContainer.BackgroundColor3 = premiumOnly and theme.BackgroundSecondary or theme.Border
+                addCorner(inputContainer)
+                inputContainer.Parent = inputFrame
+
+                local inputBox = Instance.new("TextBox")
+                inputBox.Size = UDim2.new(1, lineNumbers and -30 or 0, 1, 0)
+                inputBox.Position = UDim2.new(lineNumbers and 0.1 or 0, lineNumbers and 30 or 0, 0, 0)
+                inputBox.BackgroundTransparency = 1
+                inputBox.Text = ""
+                inputBox.PlaceholderText = placeholder
+                inputBox.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                inputBox.PlaceholderColor3 = premiumOnly and theme.TextDisabled or theme.TextSecondary
+                inputBox.TextSize = 16
+                inputBox.Font = Enum.Font.SourceSans
+                inputBox.TextWrapped = true
+                inputBox.MultiLine = multiLine
+                inputBox.TextXAlignment = Enum.TextXAlignment.Left
+                inputBox.TextYAlignment = Enum.TextYAlignment.Top
+                inputBox.TextEditable = not premiumOnly
+                inputBox.Parent = inputContainer
+
+                local lineNumberLabel
+                if lineNumbers then
+                    lineNumberLabel = Instance.new("TextLabel")
+                    lineNumberLabel.Size = UDim2.new(0, 30, 1, 0)
+                    lineNumberLabel.BackgroundTransparency = 1
+                    lineNumberLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.TextSecondary
+                    lineNumberLabel.TextSize = 14
+                    lineNumberLabel.Font = Enum.Font.SourceSans
+                    lineNumberLabel.TextXAlignment = Enum.TextXAlignment.Right
+                    lineNumberLabel.TextYAlignment = Enum.TextYAlignment.Top
+                    lineNumberLabel.Parent = inputContainer
+
+                    local function updateLineNumbers()
+                        local lines = #string.split(inputBox.Text, "\n")
+                        local lineText = ""
+                        for i = 1, lines do
+                            lineText = lineText .. i .. "\n"
+                        end
+                        lineNumberLabel.Text = lineText
+                    end
+
+                    inputBox:GetPropertyChangedSignal("Text"):Connect(updateLineNumbers)
+                    updateLineNumbers()
+                end
+
+                inputBox:GetPropertyChangedSignal("Text"):Connect(function()
+                    if premiumOnly then return end
+                    local textSize = TextService:GetTextSize(inputBox.Text, inputBox.TextSize, inputBox.Font, Vector2.new(inputBox.AbsoluteSize.X, math.huge))
+                    local newHeight = math.max(30, textSize.Y + 10)
+                    TweenService:Create(inputFrame, theme.TweenInfoElastic, {Size = UDim2.new(1, 0, 0, newHeight)}):Play()
+                    TweenService:Create(inputContainer, theme.TweenInfoElastic, {Size = UDim2.new(1, -110, 0, newHeight)}):Play()
+                    if lineNumbers then
+                        TweenService:Create(lineNumberLabel, theme.TweenInfoElastic, {Size = UDim2.new(0, 30, 0, newHeight)}):Play()
+                    end
+                end)
+
+                inputBox.FocusLost:Connect(function(enter)
+                    if premiumOnly then 
+                        mainFrame:CreateNotification({
+                            Title = "Premium Feature",
+                            Description = "This input is available only for premium users."
+                        })
+                        return 
+                    end
+                    if enter then
+                        callback(inputBox.Text)
+                    end
+                end)
+            end
+
+            function sectionAPI:CreateLabel(labelOptions)
+                labelOptions = labelOptions or {}
+                local lblText = labelOptions.Text or "Label"
+                local emphasis = labelOptions.Emphasis or false
+                local icon = labelOptions.Icon
+                local tooltip = labelOptions.Tooltip
+                local premiumOnly = labelOptions.premiumOnly or false
+
+                local labelFrame = Instance.new("Frame")
+                labelFrame.Size = UDim2.new(1, 0, 0, 20)
+                labelFrame.BackgroundTransparency = 1
+                labelFrame.Parent = sectionContent
+
+                local label = Instance.new("TextLabel")
+                label.Size = UDim2.new(1, icon and -30 or 0, 1, 0)
+                label.Position = UDim2.new(icon and 0.1 or 0, icon and 30 or 0, 0, 0)
+                label.BackgroundTransparency = 1
+                label.Text = lblText
+                label.TextColor3 = premiumOnly and theme.TextDisabled or (emphasis and theme.Accent or theme.Text)
+                label.TextSize = 16
+                label.Font = Enum.Font.Gotham
+                label.TextXAlignment = Enum.TextXAlignment.Left
+                label.Parent = labelFrame
+
+                if icon then
+                    local lblIcon = Instance.new("ImageLabel")
+                    lblIcon.Size = UDim2.new(0, 20, 0, 20)
+                    lblIcon.Position = UDim2.new(0, 0, 0, 0)
+                    lblIcon.BackgroundTransparency = 1
+                    lblIcon.Image = icon
+                    if premiumOnly then
+                        lblIcon.ImageColor3 = theme.TextDisabled
+                    end
+                    lblIcon.Parent = labelFrame
+                end
+
+                if tooltip then
+                    addTooltip(labelFrame, tooltip)
+                end
+
+                if emphasis and not premiumOnly then
+                    local pulseTween = TweenService:Create(label, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, -1, true), {TextColor3 = theme.AccentHover})
+                    pulseTween:Play()
+                end
+            end
+
+            function sectionAPI:CreateParagraph(paraOptions)
+                paraOptions = paraOptions or {}
+                local paraText = paraOptions.Text or "Paragraph text here."
+                local font = paraOptions.Font or Enum.Font.Gotham
+                local size = paraOptions.Size or 14
+                local premiumOnly = paraOptions.premiumOnly or false
+
+                local para = Instance.new("TextLabel")
+                para.Size = UDim2.new(1, 0, 0, 20)
+                para.BackgroundTransparency = 1
+                para.Text = paraText
+                para.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                para.TextSize = size
+                para.Font = font
+                para.TextXAlignment = Enum.TextXAlignment.Left
+                para.TextWrapped = true
+                para.Parent = sectionContent
+
+                local textSize = TextService:GetTextSize(para.Text, para.TextSize, para.Font, Vector2.new(para.AbsoluteSize.X, math.huge))
+                TweenService:Create(para, theme.TweenInfoStandard, {Size = UDim2.new(1, 0, 0, textSize.Y + 10)}):Play()
+            end
+
+            function sectionAPI:CreateDropdown(dropOptions)
+                dropOptions = dropOptions or {}
+                local dropName = dropOptions.Name or "Dropdown"
+                local items = dropOptions.Items or {}
+                local default = dropOptions.Default or (items[1] or "Select")
+                local callback = dropOptions.Callback or function(selected) end
+                local multiSelect = dropOptions.MultiSelect or false
+                local searchEnabled = dropOptions.Search or false
+                local tooltip = dropOptions.Tooltip
+                local premiumOnly = dropOptions.premiumOnly or false
+
+                local dropFrame = Instance.new("Frame")
+                dropFrame.Size = UDim2.new(1, 0, 0, 30)
+                dropFrame.BackgroundTransparency = 1
+                dropFrame.Parent = sectionContent
+
+                local dropLabel = Instance.new("TextLabel")
+                dropLabel.Size = UDim2.new(1, -150, 1, 0)
+                dropLabel.BackgroundTransparency = 1
+                dropLabel.Text = dropName
+                dropLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                dropLabel.TextSize = 16
+                dropLabel.Font = Enum.Font.Gotham
+                dropLabel.TextXAlignment = Enum.TextXAlignment.Left
+                dropLabel.Parent = dropFrame
+
+                if tooltip then
+                    addTooltip(dropLabel, tooltip)
+                end
+
+                local dropButton = Instance.new("TextButton")
+                dropButton.Size = UDim2.new(0, 140, 1, 0)
+                dropButton.Position = UDim2.new(1, -140, 0, 0)
+                dropButton.BackgroundColor3 = premiumOnly and theme.BackgroundSecondary or theme.Border
+                dropButton.Text = multiSelect and "Select items" or default
+                dropButton.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                dropButton.TextSize = 16
+                dropButton.Font = Enum.Font.Gotham
+                addCorner(dropButton)
+                dropButton.Parent = dropFrame
+
+                local dropArrow = Instance.new("TextLabel")
+                dropArrow.Size = UDim2.new(0, 20, 1, 0)
+                dropArrow.Position = UDim2.new(1, -20, 0, 0)
+                dropArrow.BackgroundTransparency = 1
+                dropArrow.Text = "v"
+                dropArrow.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                dropArrow.TextSize = 16
+                dropArrow.Parent = dropButton
+
+                local dropList = Instance.new("ScrollingFrame")
+                dropList.Size = UDim2.new(0, 140, 0, 0)
+                dropList.Position = UDim2.new(1, -140, 1, 0)
+                dropList.BackgroundColor3 = theme.BackgroundSecondary
+                dropList.Visible = true
+                dropList.ScrollBarThickness = 4
+                dropList.ScrollBarImageColor3 = theme.Accent
+                addCorner(dropList)
+                addStroke(dropList)
+                dropList.Parent = dropFrame
+
+                local listLayout = Instance.new("UIListLayout")
+                listLayout.FillDirection = Enum.FillDirection.Vertical
+                listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                listLayout.Padding = UDim.new(0, 2)
+                listLayout.Parent = dropList
+
+                local selectedItems = multiSelect and {} or default
+
+                if searchEnabled then
+                    local searchBox = Instance.new("TextBox")
+                    searchBox.Size = UDim2.new(1, 0, 0, 25)
+                    searchBox.BackgroundColor3 = theme.Border
+                    searchBox.PlaceholderText = "Search..."
+                    searchBox.TextColor3 = theme.Text
+                    searchBox.TextSize = 14
+                    searchBox.Font = Enum.Font.Gotham
+                    addCorner(searchBox)
+                    searchBox.Parent = dropList
+
+                    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                        local searchText = searchBox.Text:lower()
+                        for _, itemButton in ipairs(dropList:GetChildren()) if itemButton:IsA("TextButton") then
+                            if searchText == "" or itemButton.Text:lower():find(searchText) then
+                                itemButton.Visible = true
+                            else
+                                itemButton.Visible = false
+                            end
+                        end
+                        listLayout:ApplyLayout()
+                    end)
+                end
+
+                local maxHeight = math.min((#items + (searchEnabled and 1 or 0)) * 25, 150)
+                local opened = false
+
+                for _, item in ipairs(items) do
+                    local itemButton = Instance.new("TextButton")
+                    itemButton.Size = UDim2.new(1, 0, 0, 25)
+                    itemButton.BackgroundColor3 = theme.Border
+                    itemButton.Text = item
+                    itemButton.TextColor3 = theme.Text
+                    itemButton.TextSize = 14
+                    itemButton.Font = Enum.Font.Gotham
+                    addCorner(itemButton, theme.SmallCornerRadius)
+                    itemButton.Parent = dropList
+
+                    if multiSelect and table.find(selectedItems, item) then
+                        itemButton.BackgroundColor3 = theme.Accent
+                    end
+
+                    itemButton.MouseEnter:Connect(function()
+                        TweenService:Create(itemButton, theme.TweenInfoFast, {BackgroundColor3 = theme.AccentHover}):Play()
+                    end)
+
+                    itemButton.MouseLeave:Connect(function()
+                        local baseColor = (multiSelect and table.find(selectedItems, item)) and theme.Accent or theme.Border
+                        TweenService:Create(itemButton, theme.TweenInfoFast, {BackgroundColor3 = baseColor}):Play()
+                    end)
+
+                    itemButton.MouseButton1Click:Connect(function()
+                        if multiSelect then
+                            local index = table.find(selectedItems, item)
+                            if index then
+                                table.remove(selectedItems, index)
+                                itemButton.BackgroundColor3 = theme.Border
+                            else
+                                table.insert(selectedItems, item)
+                                itemButton.BackgroundColor3 = theme.Accent
+                            end
+                            dropButton.Text = #selectedItems > 0 and table.concat(selectedItems, ", ") or "Select items"
+                            callback(selectedItems)
+                        else
+                            dropButton.Text = item
+                            opened = false
+                            TweenService:Create(dropList, theme.TweenInfoBounce, {Size = UDim2.new(0, 140, 0, 0)}):Play()
+                            callback(item)
+                        end
+                    end)
+                end
+
+                dropButton.MouseButton1Click:Connect(function()
+                    if premiumOnly then
+                        mainFrame:CreateNotification({
+                            Title = "Premium Feature",
+                            Description = "This dropdown is available only for premium users."
+                        })
+                        return
+                    end
+                    opened = not opened
+                    local newSize = opened and UDim2.new(0, 140, 0, maxHeight) or UDim2.new(0, 140, 0, 0)
+                    TweenService:Create(dropList, theme.TweenInfoBounce, {Size = newSize}):Play()
+                    TweenService:Create(dropArrow, theme.TweenInfoStandard, {Rotation = opened and 180 or 0}):Play()
+                end)
+            end
+
+            function sectionAPI:CreateColorpicker(colorOptions)
+                colorOptions = colorOptions or {}
+                local cpName = colorOptions.Name or "Colorpicker"
+                local defaultColor = colorOptions.Default or Color3.new(1, 1, 1)
+                local defaultAlpha = colorOptions.DefaultAlpha or 1
+                local callback = colorOptions.Callback or function(color, alpha) end
+                local includeAlpha = colorOptions.IncludeAlpha or true
+                local presets = colorOptions.Presets or theme.PresetColors
+                local tooltip = colorOptions.Tooltip
+                local premiumOnly = colorOptions.premiumOnly or false
+
+                local cpFrame = Instance.new("Frame")
+                cpFrame.Size = UDim2.new(1, 0, 0, 30)
+                cpFrame.BackgroundTransparency = 1
+                cpFrame.Parent = sectionContent
+
+                local cpLabel = Instance.new("TextLabel")
+                cpLabel.Size = UDim2.new(1, -50, 1, 0)
+                cpLabel.BackgroundTransparency = 1
+                cpLabel.Text = cpName
+                cpLabel.TextColor3 = premiumOnly and theme.TextDisabled or theme.Text
+                cpLabel.TextSize = 16
+                cpLabel.Font = Enum.Font.Gotham
+                cpLabel.TextXAlignment = Enum.TextXAlignment.Left
+                cpLabel.Parent = cpFrame
+
+                if tooltip then
+                    addTooltip(cpLabel, tooltip)
+                end
+
+                local cpPreview = Instance.new("Frame")
+                cpPreview.Size = UDim2.new(0, 40, 0, 20)
+                cpPreview.Position = UDim2.new(1, -40, 0.5, -10)
+                cpPreview.BackgroundColor3 = premiumOnly and theme.BackgroundSecondary or defaultColor
+                cpPreview.BackgroundTransparency = 1 - defaultAlpha
+                addCorner(cpPreview)
+                addStroke(cpPreview)
+                cpPreview.Parent = cpFrame
+
+                local oldPreview = Instance.new("Frame")
+                oldPreview.Size = UDim2.new(1, 0, 0.5, 0)
+                oldPreview.Position = UDim2.new(0, 0, 0.5, 0)
+                oldPreview.BackgroundColor3 = defaultColor
+                oldPreview.BackgroundTransparency = 1 - defaultAlpha
+                oldPreview.Visible = false
+                addCorner(oldPreview, UDim.new(0, 0))
+                oldPreview.Parent = cpPreview
+
+                local pickerUI = Instance.new("Frame")
+                pickerUI.Size = UDim2.new(0, 0, 0, 0)
+                pickerUI.Position = UDim2.new(1, 10, 0, 0)
+                pickerUI.BackgroundColor3 = theme.BackgroundSecondary
+                pickerUI.Visible = true
+                addCorner(pickerUI)
+                addStroke(pickerUI)
+                pickerUI.Parent = cpFrame
+
+                local h, s, v = defaultColor:ToHSV()
+                local a = defaultAlpha
+
+                local satBox = Instance.new("Frame")
+                satBox.Size = UDim2.new(0, 150, 0, 150)
+                satBox.Position = UDim2.new(0, 10, 0, 10)
+                satBox.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+                addCorner(satBox)
+                local whiteGradient = Instance.new("UIGradient")
+                whiteGradient.Color = ColorSequence.new(Color3.new(1,1,1), Color3.new(1,1,1))
+                whiteGradient.Transparency = NumberSequence.new(0, 1)
+                whiteGradient.Rotation = 0
+                whiteGradient.Parent = satBox
+                local blackGradient = Instance.new("UIGradient")
+                blackGradient.Color = ColorSequence.new(Color3.new(0,0,0), Color3.new(0,0,0))
+                blackGradient.Transparency = NumberSequence.new(1, 0)
+                blackGradient.Rotation = 90
+                blackGradient.Parent = satBox
+                satBox.Parent = pickerUI
+
+                local satKnob = Instance.new("Frame")
+                satKnob.Size = UDim2.new(0, 8, 0, 8)
+                satKnob.Position = UDim2.new(s, -4, 1 - v, -4)
+                satKnob.BackgroundColor3 = Color3.new(1,1,1)
+                addCorner(satKnob, UDim.new(1, 0))
+                addStroke(satKnob, Color3.new(0,0,0), 0.5)
+                satKnob.Parent = satBox
+
+                local hueSlider = Instance.new("Frame")
+                hueSlider.Size = UDim2.new(0, 20, 0, 150)
+                hueSlider.Position = UDim2.new(0, 170, 0, 10)
+                hueSlider.BackgroundColor3 = Color3.new(1,1,1)
+                addCorner(hueSlider)
+                local hueGrad = Instance.new("UIGradient")
+                hueGrad.Color = ColorSequence.new{
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+                    ColorSequenceKeypoint.new(0.166, Color3.fromRGB(255, 255, 0)),
+                    ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
+                    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
+                    ColorSequenceKeypoint.new(0.666, Color3.fromRGB(0, 0, 255)),
+                    ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0, 255)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
+                }
+                hueGrad.Rotation = 90
+                hueGrad.Parent = hueSlider
+                hueSlider.Parent = pickerUI
+
+                local hueKnob = Instance.new("Frame")
+                hueKnob.Size = UDim2.new(1, 0, 0, 4)
+                hueKnob.Position = UDim2.new(0, 0, h, -2)
+                hueKnob.BackgroundColor3 = Color3.new(1,1,1)
+                addCorner(hueKnob)
+                addStroke(hueKnob, Color3.new(0,0,0), 0.5)
+                hueKnob.Parent = hueSlider
+
+                local alphaSlider
+                local alphaKnob
+                if includeAlpha then
+                    alphaSlider = Instance.new("Frame")
+                    alphaSlider.Size = UDim2.new(0, 20, 0, 150)
+                    alphaSlider.Position = UDim2.new(0, 200, 0, 10)
+                    alphaSlider.BackgroundColor3 = defaultColor
+                    addCorner(alphaSlider)
+                    local alphaGrad = Instance.new("UIGradient")
+                    alphaGrad.Transparency = NumberSequence.new(0, 1)
+                    alphaGrad.Parent = alphaSlider
+                    local checker = Instance.new("ImageLabel")
+                    checker.Size = UDim2.new(1, 0, 1, 0)
+                    checker.BackgroundTransparency = 1
+                    checker.Image = "rbxassetid://4555411734"
+                    checker.TileSize = UDim2.new(0, 10, 0, 10)
+                    checker.Parent = alphaSlider
+                    alphaSlider.Parent = pickerUI
+
+                    alphaKnob = Instance.new("Frame")
+                    alphaKnob.Size = UDim2.new(1, 0, 0, 4)
+                    alphaKnob.Position = UDim2.new(0, 0, 1 - a, -2)
+                    alphaKnob.BackgroundColor3 = Color3.new(1,1,1)
+                    addCorner(alphaKnob)
+                    addStroke(alphaKnob, Color3.new(0,0,0), 0.5)
+                    alphaKnob.Parent = alphaSlider
+                end
+
+                local inputContainer = Instance.new("Frame")
+                inputContainer.Size = UDim2.new(0, 220, 0, 30)
+                inputContainer.Position = UDim2.new(0, 10, 0, 170)
+                inputContainer.BackgroundTransparency = 1
+                inputContainer.Parent = pickerUI
+
+                local rgbLabel = Instance.new("TextLabel")
+                rgbLabel.Size = UDim2.new(0, 30, 1, 0)
+                rgbLabel.BackgroundTransparency = 1
+                rgbLabel.Text = "RGB:"
+                rgbLabel.TextColor3 = theme.Text
+                rgbLabel.TextSize = 14
+                rgbLabel.Parent = inputContainer
+
+                local rBox = Instance.new("TextBox")
+                rBox.Size = UDim2.new(0, 40, 1, 0)
+                rBox.Position = UDim2.new(0, 35, 0, 0)
+                rBox.BackgroundColor3 = theme.Border
+                rBox.Text = tostring(math.floor(defaultColor.R * 255))
+                rBox.TextColor3 = theme.Text
+                rBox.TextSize = 14
+                addCorner(rBox)
+                rBox.Parent = inputContainer
+
+                local gBox = Instance.new("TextBox")
+                gBox.Size = UDim2.new(0, 40, 1, 0)
+                gBox.Position = UDim2.new(0, 80, 0, 0)
+                gBox.BackgroundColor3 = theme.Border
+                gBox.Text = tostring(math.floor(defaultColor.G * 255))
+                gBox.TextColor3 = theme.Text
+                gBox.TextSize = 14
+                addCorner(gBox)
+                gBox.Parent = inputContainer
+
+                local bBox = Instance.new("TextBox")
+                bBox.Size = UDim2.new(0, 40, 1, 0)
+                bBox.Position = UDim2.new(0, 125, 0, 0)
+                bBox.BackgroundColor3 = theme.Border
+                bBox.Text = tostring(math.floor(defaultColor.B * 255))
+                bBox.TextColor3 = theme.Text
+                bBox.TextSize = 14
+                addCorner(bBox)
+                bBox.Parent = inputContainer
+
+                local hexLabel = Instance.new("TextLabel")
+                hexLabel.Size = UDim2.new(0, 40, 1, 0)
+                hexLabel.Position = UDim2.new(0, 170, 0, 0)
+                hexLabel.BackgroundTransparency = 1
+                hexLabel.Text = "Hex:"
+                hexLabel.TextColor3 = theme.Text
+                hexLabel.TextSize = 14
+                hexLabel.Parent = inputContainer
+
+                local hexBox = Instance.new("TextBox")
+                hexBox.Size = UDim2.new(0, 60, 1, 0)
+                hexBox.Position = UDim2.new(0, 210, 0, 0)
+                hexBox.BackgroundColor3 = theme.Border
+                hexBox.Text = defaultColor:ToHex()
+                hexBox.TextColor3 = theme.Text
+                hexBox.TextSize = 14
+                addCorner(hexBox)
+                hexBox.Parent = inputContainer
+
+                if includeAlpha then
+                    local alphaLabel = Instance.new("TextLabel")
+                    alphaLabel.Size = UDim2.new(0, 40, 1, 0)
+                    alphaLabel.Position = UDim2.new(0, 280, 0, 0)
+                    alphaLabel.BackgroundTransparency = 1
+                    alphaLabel.Text = "A:"
+                    alphaLabel.TextColor3 = theme.Text
+                    alphaLabel.TextSize = 14
+                    alphaLabel.Parent = inputContainer
+
+                    local aBox = Instance.new("TextBox")
+                    aBox.Size = UDim2.new(0, 40, 1, 0)
+                    aBox.Position = UDim2.new(0, 315, 0, 0)
+                    aBox.BackgroundColor3 = theme.Border
+                    aBox.Text = tostring(math.floor(a * 255))
+                    aBox.TextColor3 = theme.Text
+                    aBox.TextSize = 14
+                    addCorner(aBox)
+                    aBox.Parent = inputContainer
+                end
+
+                local presetContainer = Instance.new("Frame")
+                presetContainer.Size = UDim2.new(0, 220, 0, 30)
+                presetContainer.Position = UDim2.new(0, 10, 0, 210)
+                presetContainer.BackgroundTransparency = 1
+                presetContainer.Parent = pickerUI
+
+                local presetLayout = Instance.new("UIGridLayout")
+                presetLayout.CellSize = UDim2.new(0, 20, 0, 20)
+                presetLayout.CellPadding = UDim2.new(0, 5, 0, 5)
+                presetLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                presetLayout.Parent = presetContainer
+
+                for _, presetColor in ipairs(presets) do
+                    local presetButton = Instance.new("Frame")
+                    presetButton.BackgroundColor3 = presetColor
+                    addCorner(presetButton)
+                    addStroke(presetButton, theme.Border)
+                    presetButton.Parent = presetContainer
+
+                    presetButton.InputBegan:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            local newH, newS, newV = presetColor:ToHSV()
+                            h = newH
+                            s = newS
+                            v = newV
+                            satBox.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+                            satKnob.Position = UDim2.new(s, -4, 1 - v, -4)
+                            hueKnob.Position = UDim2.new(0, 0, h, -2)
+                            cpPreview.BackgroundColor3 = presetColor
+                            oldPreview.BackgroundColor3 = defaultColor
+                            oldPreview.Visible = true
+                            callback(presetColor, a)
+                        end
+                    end)
+                end
+
+                local function updateColor(fromInput)
+                    local color = Color3.fromHSV(h, s, v)
+                    cpPreview.BackgroundColor3 = color
+                    cpPreview.BackgroundTransparency = 1 - a
+                    if not fromInput then
+                        rBox.Text = tostring(math.floor(color.R * 255))
+                        gBox.Text = tostring(math.floor(color.G * 255))
+                        bBox.Text = tostring(math.floor(color.B * 255))
+                        hexBox.Text = color:ToHex()
+                        if includeAlpha then
+                            aBox.Text = tostring(math.floor(a * 255))
+                        end
+                    end
+                    callback(color, a)
+                end
+
+                local satDragging = false
+                satBox.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        satDragging = true
+                    end
+                end)
+
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        satDragging = false
+                    end
+                end)
+
+                RunService.RenderStepped:Connect(function()
+                    if satDragging then
+                        local mouse = UserInputService:GetMouseLocation()
+                        local rel = mouse - satBox.AbsolutePosition
+                        s = math.clamp(rel.X / satBox.AbsoluteSize.X, 0, 1)
+                        v = 1 - math.clamp(rel.Y / satBox.AbsoluteSize.Y, 0, 1)
+                        satKnob.Position = UDim2.new(s, -4, 1 - v, -4)
+                        updateColor()
+                    end
+                end)
+
+                local hueDragging = false
+                hueSlider.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        hueDragging = true
+                    end
+                end)
+
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        hueDragging = false
+                    end
+                end)
+
+                RunService.RenderStepped:Connect(function()
+                    if hueDragging then
+                        local mouse = UserInputService:GetMouseLocation()
+                        local rel = mouse - hueSlider.AbsolutePosition
+                        h = math.clamp(rel.Y / hueSlider.AbsoluteSize.Y, 0, 1)
+                        hueKnob.Position = UDim2.new(0, 0, h, -2)
+                        satBox.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+                        updateColor()
+                    end
+                end)
+
+                if includeAlpha then
+                    local alphaDragging = false
+                    alphaSlider.InputBegan:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            alphaDragging = true
+                        end
+                    end)
+
+                    UserInputService.InputEnded:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            alphaDragging = false
+                        end
+                    end)
+
+                    RunService.RenderStepped:Connect(function()
+                        if alphaDragging then
+                            local mouse = UserInputService:GetMouseLocation()
+                            local rel = mouse - alphaSlider.AbsolutePosition
+                            a = 1 - math.clamp(rel.Y / alphaSlider.AbsoluteSize.Y, 0, 1)
+                            alphaKnob.Position = UDim2.new(0, 0, 1 - a, -2)
+                            updateColor()
+                        end
+                    end)
+                end
+
+                local function validateInput(box, minVal, maxVal)
+                    box.FocusLost:Connect(function()
+                        local num = tonumber(box.Text)
+                        if num then
+                            box.Text = tostring(math.clamp(num, minVal, maxVal))
+                        else
+                            box.Text = "0"
+                        end
+                        local r = tonumber(rBox.Text) / 255
+                        local g = tonumber(gBox.Text) / 255
+                        local b = tonumber(bBox.Text) / 255
+                        local color = Color3.new(r, g, b)
+                        h, s, v = color:ToHSV()
+                        satBox.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+                        satKnob.Position = UDim2.new(s, -4, 1 - v, -4)
+                        hueKnob.Position = UDim2.new(0, 0, h, -2)
+                        updateColor(true)
+                    end)
+                end
+
+                validateInput(rBox, 0, 255)
+                validateInput(gBox, 0, 255)
+                validateInput(bBox, 0, 255)
+
+                hexBox.FocusLost:Connect(function()
+                    local hex = hexBox.Text:match("^%x%x%x%x%x%x$")
+                    if hex then
+                        local r = tonumber(hex:sub(1,2), 16) / 255
+                        local g = tonumber(hex:sub(3,4), 16) / 255
+                        local b = tonumber(hex:sub(5,6), 16) / 255
+                        local color = Color3.new(r, g, b)
+                        h, s, v = color:ToHSV()
+                        satBox.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+                        satKnob.Position = UDim2.new(s, -4, 1 - v, -4)
+                        hueKnob.Position = UDim2.new(0, 0, h, -2)
+                        updateColor(true)
+                    else
+                        hexBox.Text = Color3.fromHSV(h, s, v):ToHex()
+                    end
+                end)
+
+                if includeAlpha then
+                    aBox.FocusLost:Connect(function()
+                        local num = tonumber(aBox.Text)
+                        if num then
+                            a = math.clamp(num / 255, 0, 1)
+                            aBox.Text = tostring(math.floor(a * 255))
+                            updateColor(true)
+                        else
+                            aBox.Text = "255"
+                        end
+                    end)
+                end
+
+                local opened = false
+                cpPreview.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        if premiumOnly then
+                            mainFrame:CreateNotification({
+                                Title = "Premium Feature",
+                                Description = "This colorpicker is available only for premium users."
+                            })
+                            return
+                        end
+                        opened = not opened
+                        local newSize = opened and UDim2.new(0, 230 + (includeAlpha and 30 or 0), 0, 250) or UDim2.new(0, 0, 0, 0)
+                        TweenService:Create(pickerUI, theme.TweenInfoElastic, {Size = newSize}):Play()
+                        oldPreview.BackgroundColor3 = cpPreview.BackgroundColor3
+                        oldPreview.BackgroundTransparency = cpPreview.BackgroundTransparency
+                        oldPreview.Visible = opened
+                    end
+                end)
+            end
+
+            return sectionAPI
+        end
+
+        return tabAPI
+    end
+
+    local notifContainer = Instance.new("Frame")
+    notifContainer.Size = UDim2.new(0, 300, 1, 0)
+    notifContainer.Position = UDim2.new(1, -310, 0, 0)
+    notifContainer.BackgroundTransparency = 1
+    notifContainer.Parent = screenGui
+
+    local notifLayout = Instance.new("UIListLayout")
+    notifLayout.FillDirection = Enum.FillDirection.Vertical
+    notifLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    notifLayout.Padding = UDim.new(0, 10)
+    notifLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+    notifLayout.Parent = notifContainer
+
+    function mainFrame:CreateNotification(notifOptions)
+        notifOptions = notifOptions or {}
+        local notifTitle = notifOptions.Title or "Notification"
+        local notifDesc = notifOptions.Description or "Description"
+        local duration = notifOptions.Duration or 5
+        local imageId = notifOptions.ImageId
+        local callback = notifOptions.Callback or function() end
+
+        local notifFrame = Instance.new("Frame")
+        notifFrame.Size = UDim2.new(1, 0, 0, 60)
+        notifFrame.BackgroundColor3 = theme.Background
+        notifFrame.BackgroundTransparency = 1
+        addCorner(notifFrame)
+        addStroke(notifFrame)
+        addGlow(notifFrame, theme.Accent, 1)
+        notifFrame.Parent = notifContainer
+
+        local notifImage = Instance.new("ImageLabel")
+        notifImage.Size = UDim2.new(0, 40, 0, 40)
+        notifImage.Position = UDim2.new(0, 10, 0.5, -20)
+        notifImage.BackgroundTransparency = 1
+        if imageId then
+            notifImage.Image = "rbxassetid://" .. imageId
+        end
+        notifImage.Parent = notifFrame
+
+        local notifTitleLabel = Instance.new("TextLabel")
+        notifTitleLabel.Size = UDim2.new(1, -60, 0, 20)
+        notifTitleLabel.Position = UDim2.new(0, 60, 0, 10)
+        notifTitleLabel.BackgroundTransparency = 1
+        notifTitleLabel.Text = notifTitle
+        notifTitleLabel.TextColor3 = theme.Text
+        notifTitleLabel.TextSize = 16
+        notifTitleLabel.Font = Enum.Font.GothamBold
+        notifTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+        notifTitleLabel.TextTransparency = 1
+        notifTitleLabel.Parent = notifFrame
+
+        local notifDescLabel = Instance.new("TextLabel")
+        notifDescLabel.Size = UDim2.new(1, -60, 0, 20)
+        notifDescLabel.Position = UDim2.new(0, 60, 0, 30)
+        notifDescLabel.BackgroundTransparency = 1
+        notifDescLabel.Text = notifDesc
+        notifDescLabel.TextColor3 = theme.TextSecondary
+        notifDescLabel.TextSize = 14
+        notifDescLabel.Font = Enum.Font.Gotham
+        notifDescLabel.TextXAlignment = Enum.TextXAlignment.Left
+        notifDescLabel.TextTransparency = 1
+        notifDescLabel.Parent = notifFrame
+
+        local startPos = UDim2.new(1, 0, notifFrame.Position.Y.Scale, notifFrame.Position.Y.Offset)
+        notifFrame.Position = startPos
+        TweenService:Create(notifFrame, theme.TweenInfoElastic, {Position = UDim2.new(0, 0, notifFrame.Position.Y.Scale, notifFrame.Position.Y.Offset), BackgroundTransparency = 0}):Play()
+        TweenService:Create(notifTitleLabel, theme.TweenInfoElastic, {TextTransparency = 0}):Play()
+        TweenService:Create(notifDescLabel, theme.TweenInfoElastic, {TextTransparency = 0}):Play()
+
+        local pulseTween = TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 1, true), {Size = UDim2.new(1, 8, 0, 68)}):Play()
+
+        task.delay(duration, function()
+            TweenService:Create(notifFrame, theme.TweenInfoElastic, {Position = startPos, BackgroundTransparency = 1}):Play()
+            TweenService:Create(notifTitleLabel, theme.TweenInfoElastic, {TextTransparency = 1}):Play()
+            TweenService:Create(notifDescLabel, theme.TweenInfoElastic, {TextTransparency = 1}):Play()
+            task.delay(theme.TweenInfoElastic.Time, function()
+                notifFrame:Destroy()
+                callback()
+            end)
+        end)
+
+        table.insert(activeNotifs, notifFrame)
+    end
+
+    return mainFrame
+end
+
+return ZyrixUI
